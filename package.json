@@ -1,0 +1,22 @@
+{
+  "name": "url-fetch-script",
+  "version": "1.0.0",
+  "description": "A Node.js script to fetch URLs, check status, and extract content.",
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js --pagestart=0 --pagesize=10 --",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "minimist": "^1.2.8",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Steve Pegg",
+  "license": "MIT"
+}
