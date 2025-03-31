@@ -18,10 +18,12 @@ const OUTPUT_CSV_FILE = path.join(__dirname, "url-results-with-content.csv"); //
 const LOG_FILE = path.join(__dirname, "url-results-log.txt"); // Log filename
 
 // Request Configuration
-const REQUEST_DELAY_MS = 500; // Delay between requests
+const REQUEST_DELAY_MS = 300; // Delay between requests
 const REQUEST_TIMEOUT_MS = 20000; // Timeout for each request (increased slightly for content download)
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"; // Common browser user agent
+
+const BATCH_RUN_ID = new Date().toISOString().replace(/[:.]/g, "-"); // Unique ID for batch run
 
 // Content Extraction Configuration
 const CONTENT_SELECTOR = "#qg-primary-content"; // CSS Selector for the main content DIV
@@ -34,12 +36,19 @@ const IGNORE_SELECTORS = [
 // CSV Headers (Added mainContentText)
 const CSV_HEADERS = [
   "row", // Overall row number
+  "batchRunId", // Unique ID for this batch run
   "originalUrl",
   "finalUrl",
   "statusCode",
   "redirected", // boolean: true/false
   "contentType", // Content-Type header
+  "isSWE",
   "mainContentText", // Extracted text content
+  "meta_title",
+  "meta_description",
+  "meta_created",
+  "meta_modified",
+  "meta_assetid",
   "error", // To log fetch-specific errors
 ];
 
@@ -173,6 +182,33 @@ const extractContentText = (htmlString, selector, ignore_selectors) => {
   }
 };
 
+const extractContentMeta = (htmlString, fields) => {
+  if (!htmlString || !fields) {
+    return "";
+  }
+
+  try {
+    const $ = cheerio.load(htmlString);
+    let metaData = {};
+    fields.forEach((field) => {
+      const contentElement = $(`meta[name="${field}"]`);
+      if (contentElement.length > 0) {
+        metaData[field] = contentElement.attr("content");
+      } else {
+        metaData[field] = "Meta tag not found"; // Indicate the specific div wasn't present
+      }
+    });
+    console.log(metaData);
+
+    return metaData;
+  } catch (error) {
+    console.error(
+      `Error parsing HTML or extracting content with Cheerio: ${error.message}`
+    );
+    return "Error during content extraction"; // Indicate a parsing error
+  }
+};
+
 /**
  * Processes the fetch response and potentially extracts content.
  * @param {fetch.Response} response - The response object from fetch.
@@ -183,6 +219,9 @@ const extractContentText = (htmlString, selector, ignore_selectors) => {
  */
 const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
   let extractedText = "";
+  let extractedMetadata = {};
+  let isSWE = "";
+
   // Only attempt extraction if we successfully got HTML body text
   if (bodyText) {
     extractedText = extractContentText(
@@ -190,6 +229,17 @@ const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
       CONTENT_SELECTOR,
       IGNORE_SELECTORS
     );
+
+    // Extract metadata
+    extractedMetadata = extractContentMeta(bodyText, [
+      "DCTERMS.title",
+      "DCTERMS.description",
+      "DCTERMS.created",
+      "DCTERMS.modified",
+      "matrix.id",
+    ]);
+
+    isSWE = bodyText.includes("qg-main.css") ? "Yes" : isSWE; //true or false
   } else if (
     response.ok &&
     (response.headers.get("content-type") || "").startsWith("text/html")
@@ -200,12 +250,19 @@ const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
 
   return {
     row: overallIndex,
+    batchRunId: BATCH_RUN_ID, // Unique ID for this batch run
     originalUrl: originalUrl,
     finalUrl: response.url, // URL after potential redirects
     statusCode: response.status,
     redirected: response.redirected,
     contentType: response.headers.get("content-type") || "", // Get Content-Type header
+    isSWE: isSWE,
     mainContentText: extractedText, // Add extracted text
+    meta_title: extractedMetadata["DCTERMS.title"],
+    meta_description: extractedMetadata["DCTERMS.description"],
+    meta_created: extractedMetadata["DCTERMS.created"],
+    meta_modified: extractedMetadata["DCTERMS.modified"],
+    meta_assetid: extractedMetadata["matrix.id"],
     error: "", // No fetch error
   };
 };
