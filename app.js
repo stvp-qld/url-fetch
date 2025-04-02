@@ -44,6 +44,7 @@ const CSV_HEADERS = [
   "contentType", // Content-Type header
   "isSWE",
   "mainContentText", // Extracted text content
+  "bodyClasses",
   "meta_title",
   "meta_description",
   "meta_created",
@@ -69,8 +70,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const parseCliArgs = () => {
   // (Function remains the same as before)
   const args = minimist(process.argv.slice(2));
-  const pageStart = parseInt(args.pagestart, 10);
-  const pageSize = parseInt(args.pagesize, 10);
+  const pageStart = parseInt(args.pagestart, 10) || 0;
+  const pageSize = parseInt(args.pagesize, 10) || 20;
 
   if (isNaN(pageStart) || pageStart < 0) {
     throw new Error(
@@ -182,6 +183,18 @@ const extractContentText = (htmlString, selector, ignore_selectors) => {
   }
 };
 
+const extractBodyClasses = (htmlString) => {
+  try {
+    const $ = cheerio.load(htmlString);
+    const bodyClasses = $("body").attr("class") || "";
+    return bodyClasses;
+  } catch (error) {
+    console.error(
+      `Error parsing HTML or extracting body classes with Cheerio: ${error.message}`
+    );
+  }
+};
+
 const extractContentMeta = (htmlString, fields) => {
   if (!htmlString || !fields) {
     return "";
@@ -219,6 +232,7 @@ const extractContentMeta = (htmlString, fields) => {
  */
 const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
   let extractedText = "";
+  let bodyClasses = "";
   let extractedMetadata = {};
   let isSWE = "";
 
@@ -229,6 +243,8 @@ const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
       CONTENT_SELECTOR,
       IGNORE_SELECTORS
     );
+
+    bodyClasses = extractBodyClasses(bodyText);
 
     // Extract metadata
     extractedMetadata = extractContentMeta(bodyText, [
@@ -258,6 +274,7 @@ const processHttpResponse = (response, bodyText, originalUrl, overallIndex) => {
     contentType: response.headers.get("content-type") || "", // Get Content-Type header
     isSWE: isSWE,
     mainContentText: extractedText, // Add extracted text
+    bodyClasses: bodyClasses || "", // Add body classes if available
     meta_title: extractedMetadata["DCTERMS.title"],
     meta_description: extractedMetadata["DCTERMS.description"],
     meta_created: extractedMetadata["DCTERMS.created"],
@@ -380,7 +397,9 @@ const appendToLogFile = (message, filePath) => {
       const originalUrl = urlsToProcess[i];
       const overallIndex = startIndex + i + 1; // 1-based overall index
 
-      console.log(`\nProcessing ${overallIndex}/${totalUrls}: ${originalUrl}`);
+      console.log(
+        `\nProcessing ${overallIndex} of ${endIndex}, from ${totalUrls}.\nURLs: ${originalUrl}`
+      );
 
       // Fetch data, including body text if applicable
       const { response, bodyText, error } = await fetchUrlData(originalUrl);
